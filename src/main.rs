@@ -60,6 +60,13 @@ fn read_request(stream: &mut TcpStream) -> Result<Request, HTTPError> {
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
 
+    // // Remove the trailing zeros from the buffer
+    // let buffer = buffer
+    //     .iter()
+    //     .map(|b| *b)
+    //     .take_while(|b| *b != 0)
+    //     .collect::<Vec<u8>>();
+
     let buffer = String::from_utf8(buffer.to_vec()).unwrap();
 
     Request::parse_request(&buffer)
