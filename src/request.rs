@@ -85,23 +85,17 @@ pub struct Request {
 
 impl Request {
     pub fn parse_request(request: &str) -> Result<Request, HTTPError> {
-        let mut parts = request.split("\r\n").collect::<Vec<&str>>();
+        let parts = request.split("\r\n\r\n").collect::<Vec<&str>>();
 
-        // Remove the last empty string
-        parts.pop();
+        let headers = parts[0];
+        let body = parts[1];
 
-        let request_line = parts.remove(0);
-        let body = parts
-            .pop()
-            .map(|b| match b {
-                "" => None,
-                _ => Some(b.as_bytes().to_vec()),
-            })
-            .unwrap();
-        let headers = parts;
+        let mut headers = headers.split("\r\n").collect::<Vec<&str>>();
+        let request_line = headers.remove(0);
 
         let request_line = RequestLine::parse_request_line(request_line)?;
         let headers = Request::parse_headers(headers);
+        let body = Request::parse_body(body);
 
         Ok(Request {
             request_line,
@@ -112,7 +106,6 @@ impl Request {
 
     fn parse_headers(headers: Vec<&str>) -> HashMap<String, String> {
         let mut headers_map = HashMap::new();
-        println!("{:?}", headers);
 
         for line in headers {
             let parts = line.split(": ").collect::<Vec<&str>>();
@@ -120,6 +113,13 @@ impl Request {
         }
 
         headers_map
+    }
+
+    fn parse_body(body: &str) -> Option<Vec<u8>> {
+        match body {
+            "" => None,
+            _ => Some(body.as_bytes().to_vec()),
+        }
     }
 
     pub fn request_line(&self) -> &RequestLine {
