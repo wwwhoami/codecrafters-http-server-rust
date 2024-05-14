@@ -1,4 +1,11 @@
-use std::{io::Write, net::TcpListener};
+pub mod request;
+
+use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+};
+
+use request::{HTTPError, Request};
 
 fn main() {
     const HOST: &str = "127.0.0.1";
@@ -11,26 +18,49 @@ fn main() {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(mut stream) => {
+            Ok(stream) => {
                 println!(
                     "accepted new connection from: {}",
                     stream.peer_addr().unwrap()
                 );
-                let res = b"HTTP/1.1 200 OK\r\n\r\n";
-                let write_result = stream.write(res);
 
-                match write_result {
-                    Ok(_) => {
-                        println!("response sent");
-                    }
-                    Err(e) => {
-                        println!("error sending response: {}", e);
-                    }
-                }
+                handle_stream(stream);
             }
             Err(e) => {
-                println!("error: {}", e);
+                eprintln!("error: {}", e);
             }
         }
     }
+}
+
+fn handle_stream(mut stream: TcpStream) {
+    let request = read_request(&mut stream);
+    println!("Request: {:?}", request);
+
+    match request {
+        Ok(request) => match request.request_line().path() {
+            "/" => {
+                let response = format!("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+
+                stream.write(response.as_bytes()).unwrap();
+            }
+            _ => {
+                let response = format!("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+
+                stream.write(response.as_bytes()).unwrap();
+            }
+        },
+        Err(e) => {
+            eprintln!("error: {:?}", e);
+        }
+    }
+}
+
+fn read_request(stream: &mut TcpStream) -> Result<Request, HTTPError> {
+    let mut buffer = [0; 1024];
+    stream.read(&mut buffer).unwrap();
+
+    let buffer = String::from_utf8(buffer.to_vec()).unwrap();
+
+    Request::parse_request(&buffer)
 }
