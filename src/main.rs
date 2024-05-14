@@ -16,7 +16,7 @@ fn main() {
                     "accepted new connection from: {}",
                     stream.peer_addr().unwrap()
                 );
-                let res = b"HTTP/1.1 200 OK\r\n";
+                let res = b"HTTP/1.1 200 OK\r\n\r\n";
                 let write_result = stream.write(res);
 
                 match write_result {
