@@ -1,10 +1,22 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, string::FromUtf8Error};
 
 #[derive(Debug)]
 pub enum HTTPError {
     IoError(std::io::Error),
     IllegalMethod,
     Other(String),
+}
+
+impl From<std::io::Error> for HTTPError {
+    fn from(value: std::io::Error) -> Self {
+        HTTPError::IoError(value)
+    }
+}
+
+impl From<FromUtf8Error> for HTTPError {
+    fn from(value: FromUtf8Error) -> Self {
+        HTTPError::Other(value.to_string())
+    }
 }
 
 #[derive(Debug)]

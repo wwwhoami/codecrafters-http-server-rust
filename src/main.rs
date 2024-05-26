@@ -37,28 +37,41 @@ fn handle_stream(mut stream: TcpStream) {
     let request = read_request(&mut stream);
     println!("Request: {:?}", request);
 
-    match request {
+    let response = match request {
         Ok(request) => match request.request_line().path() {
             "/" => {
-                let response = format!("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
-
-                stream.write(response.as_bytes()).unwrap();
+                format!("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
             }
             _ => {
-                let response = format!("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
-
-                stream.write(response.as_bytes()).unwrap();
+                format!("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
             }
         },
         Err(e) => {
-            eprintln!("error: {:?}", e);
+            eprintln!("Error: {:?}", e);
+            format!("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
         }
-    }
+    };
+
+    println!("Response: {:?}", response);
+
+    stream.write_all(response.as_bytes()).unwrap();
 }
 
 fn read_request(stream: &mut TcpStream) -> Result<Request, HTTPError> {
+    let buffer = read_from_stream(stream)?;
+
+    println!("Buffer: {:?}", buffer);
+
+    let str_buffer = String::from_utf8(buffer.to_vec())?;
+
+    Request::parse_request(&str_buffer)
+}
+
+fn read_from_stream(stream: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
+    let mut buf_reader = std::io::BufReader::new(stream);
     let mut buffer = [0; 1024];
-    stream.read(&mut buffer).unwrap();
+
+    buf_reader.read(&mut buffer)?;
 
     // Remove trailing zeros from the buffer
     let buffer = buffer
@@ -67,7 +80,5 @@ fn read_request(stream: &mut TcpStream) -> Result<Request, HTTPError> {
         .take_while(|b| *b != 0)
         .collect::<Vec<u8>>();
 
-    let buffer = String::from_utf8(buffer.to_vec()).unwrap();
-
-    Request::parse_request(&buffer)
+    Ok(buffer)
 }
