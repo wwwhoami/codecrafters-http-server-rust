@@ -1,4 +1,4 @@
-use std::{collections::HashMap, string::FromUtf8Error};
+use std::{collections::HashMap, fmt::Display, string::FromUtf8Error};
 
 #[derive(Debug)]
 pub enum HTTPError {
@@ -95,14 +95,40 @@ pub struct Request {
     body: Option<Vec<u8>>,
 }
 
+impl Display for Request {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Request:\n\tMethod: {:?},\n\tPath: {},\n\tVersion: {},\n\tHeaders: {:?},\n\tBody: {:?}",
+            self.request_line.method,
+            self.request_line.path,
+            self.request_line.version,
+            self.headers,
+            String::from_utf8(self.body.as_ref().unwrap_or(&Vec::new()).to_vec()).unwrap()
+        )
+    }
+}
+
 impl Request {
     pub fn parse_request(request: &str) -> Result<Request, HTTPError> {
         let parts = request.split("\r\n\r\n").collect::<Vec<&str>>();
 
-        let headers = parts[0];
-        let body = parts[1];
+        let headers = parts.first();
+        let body = parts.get(1);
+
+        // If we don't have both headers and body by splitting on \r\n\r\n
+        // the request is malformed
+        let (headers, body) = match (headers, body) {
+            (Some(headers), Some(body)) => (*headers, *body),
+            _ => {
+                return Err(HTTPError::Other(
+                    "Invalid request: malformed HTTP".to_string(),
+                ))
+            }
+        };
 
         let mut headers = headers.split("\r\n").collect::<Vec<&str>>();
+        // The first line is the request line
         let request_line = headers.remove(0);
 
         let request_line = RequestLine::parse_request_line(request_line)?;
