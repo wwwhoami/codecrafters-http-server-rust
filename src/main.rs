@@ -46,6 +46,19 @@ fn handle_stream(mut stream: TcpStream) {
 
             match request.request_line().path() {
                 "/" => Response::new(Status::new(200, "OK")),
+                "/user-agent" => {
+                    let default_agent = "Unknown".to_string();
+                    let user_agent = request
+                        .headers()
+                        .get("User-Agent")
+                        .unwrap_or(&default_agent);
+
+                    let mut response = Response::new(Status::new(200, "OK"));
+                    response.set_header("Content-Type", "text/plain");
+                    response.set_body(user_agent.as_bytes());
+
+                    response
+                }
                 _ => {
                     if request.request_line().path().starts_with("/echo") {
                         let echo_string = request.request_line().path().replace("/echo/", "");
