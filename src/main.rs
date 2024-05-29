@@ -1,4 +1,5 @@
 pub mod request;
+pub mod response;
 
 use std::{
     io::{Read, Write},
@@ -6,6 +7,8 @@ use std::{
 };
 
 use request::{HTTPError, Request};
+
+use crate::response::{Response, Status};
 
 fn main() {
     const HOST: &str = "127.0.0.1";
@@ -42,19 +45,32 @@ fn handle_stream(mut stream: TcpStream) {
             println!("{}", request);
 
             match request.request_line().path() {
-                "/" => "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_string(),
-                _ => "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".to_string(),
+                "/" => Response::new(Status::new(200, "OK")),
+                _ => {
+                    if request.request_line().path().starts_with("/echo") {
+                        let echo_string = request.request_line().path().replace("/echo/", "");
+                        let echo_string = echo_string.replace("%20", " ");
+
+                        let mut response = Response::new(Status::new(200, "OK"));
+                        response.set_header("Content-Type", "text/plain");
+                        response.set_body(echo_string.as_bytes());
+
+                        response
+                    } else {
+                        Response::new(Status::new(404, "Not Found"))
+                    }
+                }
             }
         }
         Err(e) => {
             eprintln!("Error: {:?}", e);
-            "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".to_string()
+            Response::new(Status::new(400, "Bad Request"))
         }
     };
 
     println!("Response: {:?}", response);
 
-    stream.write_all(response.as_bytes()).unwrap();
+    stream.write_all(&response.as_bytes()).unwrap();
 }
 
 fn read_request(stream: &mut TcpStream) -> Result<Request, HTTPError> {
