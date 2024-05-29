@@ -1,43 +1,36 @@
 pub mod request;
 pub mod response;
 
-use std::{
-    io::{Read, Write},
+use anyhow::Result;
+use request::{HTTPError, Request};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
 
-use request::{HTTPError, Request};
-
 use crate::response::{Response, Status};
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
     const HOST: &str = "127.0.0.1";
     const PORT: i32 = 4221;
     let addr = format!("{}:{}", HOST, PORT);
 
-    let listener = TcpListener::bind(addr).unwrap();
+    let listener = TcpListener::bind(addr).await?;
 
     println!("server listening on port {}", PORT);
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                println!(
-                    "accepted new connection from: {}",
-                    stream.peer_addr().unwrap()
-                );
+    loop {
+        let (stream, _) = listener.accept().await?;
 
-                handle_stream(stream);
-            }
-            Err(e) => {
-                eprintln!("error: {}", e);
-            }
-        }
+        tokio::spawn(async move {
+            let _ = handle_stream(stream).await;
+        });
     }
 }
 
-fn handle_stream(mut stream: TcpStream) {
-    let request = read_request(&mut stream);
+async fn handle_stream(mut stream: TcpStream) -> Result<()> {
+    let request = read_request(&mut stream).await;
     // println!("Request: {:?}", request);
 
     let response = match request {
@@ -83,24 +76,26 @@ fn handle_stream(mut stream: TcpStream) {
 
     println!("Response: {:?}", response);
 
-    stream.write_all(&response.as_bytes()).unwrap();
+    stream.write_all(&response.as_bytes()).await?;
+
+    Ok(())
 }
 
-fn read_request(stream: &mut TcpStream) -> Result<Request, HTTPError> {
-    let buffer = read_from_stream(stream)?;
+async fn read_request(stream: &mut TcpStream) -> Result<Request, HTTPError> {
+    let buffer = read_from_stream(stream).await?;
 
     let str_buffer = String::from_utf8(buffer.to_vec())?;
 
     Request::parse_request(&str_buffer)
 }
 
-fn read_from_stream(stream: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
-    let mut buf_reader = std::io::BufReader::new(stream);
+async fn read_from_stream(stream: &mut TcpStream) -> Result<Vec<u8>, std::io::Error> {
+    let mut buf_reader = tokio::io::BufReader::new(stream);
     let mut buffer = Vec::new();
 
     loop {
         let mut buf = [0; 1024];
-        let bytes_read = buf_reader.read(&mut buf)?;
+        let bytes_read = buf_reader.read(&mut buf[..]).await?;
 
         // If we read 0 bytes, we've reached the end of the stream
         if bytes_read == 0 {
