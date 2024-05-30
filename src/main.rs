@@ -3,12 +3,11 @@ pub mod response;
 
 use anyhow::Result;
 use request::{HTTPError, Request};
+use response::ResponseBuilder;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
-
-use crate::response::{Response, Status};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -31,14 +30,13 @@ async fn main() -> Result<()> {
 
 async fn handle_stream(mut stream: TcpStream) -> Result<()> {
     let request = read_request(&mut stream).await;
-    // println!("Request: {:?}", request);
 
     let response = match request {
         Ok(request) => {
             println!("{}", request);
 
             match request.request_line().path() {
-                "/" => Response::new(Status::new(200, "OK")),
+                "/" => ResponseBuilder::new().status(200, "OK").build(),
                 "/user-agent" => {
                     let default_agent = "Unknown".to_string();
                     let user_agent = request
@@ -46,33 +44,35 @@ async fn handle_stream(mut stream: TcpStream) -> Result<()> {
                         .get("User-Agent")
                         .unwrap_or(&default_agent);
 
-                    let mut response = Response::new(Status::new(200, "OK"));
-                    response.set_header("Content-Type", "text/plain");
-                    response.set_body(user_agent.as_bytes());
-
-                    response
+                    ResponseBuilder::new()
+                        .status(200, "OK")
+                        .header("Content-Type", "text/plain")
+                        .body(user_agent.as_bytes())
+                        .build()
                 }
                 _ => {
                     if request.request_line().path().starts_with("/echo") {
                         let echo_string = request.request_line().path().replace("/echo/", "");
                         let echo_string = echo_string.replace("%20", " ");
 
-                        let mut response = Response::new(Status::new(200, "OK"));
-                        response.set_header("Content-Type", "text/plain");
-                        response.set_body(echo_string.as_bytes());
-
-                        response
+                        ResponseBuilder::new()
+                            .status(200, "OK")
+                            .header("Content-Type", "text/plain")
+                            .body(echo_string.as_bytes())
+                            .build()
                     } else {
-                        Response::new(Status::new(404, "Not Found"))
+                        ResponseBuilder::new().status(404, "Not Found").build()
                     }
                 }
             }
         }
         Err(e) => {
-            eprintln!("Error: {:?}", e);
-            Response::new(Status::new(400, "Bad Request"))
+            eprintln!("HTTP Error: {:?}", e);
+            ResponseBuilder::new().status(400, "Bad Request").build()
         }
     };
+
+    let response = response?;
 
     println!("Response: {:?}", response);
 

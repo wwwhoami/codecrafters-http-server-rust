@@ -1,7 +1,8 @@
+use anyhow::{anyhow, Result};
 use std::{collections::HashMap, fmt::Display};
 
 #[derive(Debug)]
-pub struct Status {
+struct Status {
     code: u16,
     reason: String,
 }
@@ -20,6 +21,60 @@ impl Status {
         }
     }
 }
+pub struct ResponseBuilder {
+    status: Option<Status>,
+    headers: HashMap<String, String>,
+    body: Vec<u8>,
+}
+
+impl ResponseBuilder {
+    pub fn new() -> ResponseBuilder {
+        ResponseBuilder {
+            status: None,
+            headers: HashMap::new(),
+            body: Vec::new(),
+        }
+    }
+
+    pub fn status(mut self, code: u16, reason: &str) -> Self {
+        let status = Status::new(code, reason);
+        self.status = Some(status);
+        self
+    }
+
+    pub fn header(mut self, key: &str, value: &str) -> Self {
+        self.headers.insert(key.to_string(), value.to_string());
+        self
+    }
+
+    pub fn headers(mut self, headers: &[(&str, &str)]) -> Self {
+        let mut headers_map = HashMap::new();
+
+        for (key, value) in headers {
+            headers_map.insert(key.to_string(), value.to_string());
+        }
+
+        self.headers = headers_map;
+        self
+    }
+
+    pub fn body(mut self, body: &[u8]) -> Self {
+        self.body = body.to_vec();
+        self
+    }
+
+    pub fn build(self) -> Result<Response> {
+        if let Some(status) = self.status {
+            Ok(Response {
+                status,
+                headers: self.headers,
+                body: self.body,
+            })
+        } else {
+            Err(anyhow!("Cannot build Response without a status"))
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Response {
@@ -29,26 +84,6 @@ pub struct Response {
 }
 
 impl Response {
-    pub fn new(status: Status) -> Response {
-        Response {
-            status,
-            headers: HashMap::new(),
-            body: Vec::new(),
-        }
-    }
-
-    pub fn status(&self) -> &Status {
-        &self.status
-    }
-
-    pub fn headers(&self) -> &HashMap<String, String> {
-        &self.headers
-    }
-
-    pub fn body(&self) -> &Vec<u8> {
-        &self.body
-    }
-
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut response = format!("HTTP/1.1 {}\r\n", self.status);
 
@@ -64,21 +99,5 @@ impl Response {
         response_bytes.append(&mut self.body.clone());
 
         response_bytes
-    }
-
-    pub fn set_status(&mut self, status: Status) {
-        self.status = status;
-    }
-
-    pub fn set_headers(&mut self, headers: HashMap<String, String>) {
-        self.headers = headers;
-    }
-
-    pub fn set_header(&mut self, key: &str, value: &str) {
-        self.headers.insert(key.to_string(), value.to_string());
-    }
-
-    pub fn set_body(&mut self, body: &[u8]) {
-        self.body = body.to_vec();
     }
 }
