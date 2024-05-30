@@ -27,6 +27,12 @@ pub struct ResponseBuilder {
     body: Vec<u8>,
 }
 
+impl Default for ResponseBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ResponseBuilder {
     pub fn new() -> ResponseBuilder {
         ResponseBuilder {

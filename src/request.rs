@@ -93,18 +93,20 @@ pub struct Request {
     request_line: RequestLine,
     headers: HashMap<String, String>,
     body: Option<Vec<u8>>,
+    params: HashMap<String, String>,
 }
 
 impl Display for Request {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Request:\n\tMethod: {:?},\n\tPath: {},\n\tVersion: {},\n\tHeaders: {:?},\n\tBody: {:?}",
+            "Request:\n\tMethod: {:?},\n\tPath: {},\n\tVersion: {},\n\tHeaders: {:?},\n\tBody: {:?}\n\tParams: {:?}",
             self.request_line.method,
             self.request_line.path,
             self.request_line.version,
             self.headers,
-            String::from_utf8(self.body.as_ref().unwrap_or(&Vec::new()).to_vec()).unwrap()
+            String::from_utf8(self.body.as_ref().unwrap_or(&Vec::new()).to_vec()).unwrap(),
+            self.params,
         )
     }
 }
@@ -139,6 +141,7 @@ impl Request {
             request_line,
             headers,
             body,
+            params: HashMap::new(),
         })
     }
 
@@ -170,5 +173,17 @@ impl Request {
 
     pub fn body(&self) -> Option<&Vec<u8>> {
         self.body.as_ref()
+    }
+
+    pub fn params(&self) -> &HashMap<String, String> {
+        &self.params
+    }
+
+    pub fn add_param(&mut self, key: &str, value: &str) {
+        self.params.insert(key.to_string(), value.to_string());
+    }
+
+    pub fn add_params(&mut self, params: HashMap<String, String>) {
+        self.params.extend(params);
     }
 }
