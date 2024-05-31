@@ -19,7 +19,7 @@ impl From<FromUtf8Error> for HTTPError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HTTPMethod {
     GET,
     POST,
@@ -33,7 +33,7 @@ pub enum HTTPMethod {
 }
 
 impl HTTPMethod {
-    fn parse_method(method: &str) -> Result<HTTPMethod, HTTPError> {
+    pub(crate) fn parse_method(method: &str) -> Result<HTTPMethod, HTTPError> {
         match method {
             "GET" => Ok(HTTPMethod::GET),
             "POST" => Ok(HTTPMethod::POST),
@@ -49,7 +49,7 @@ impl HTTPMethod {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RequestLine {
     method: HTTPMethod,
     path: String,
@@ -88,7 +88,7 @@ impl RequestLine {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Request {
     request_line: RequestLine,
     headers: HashMap<String, String>,

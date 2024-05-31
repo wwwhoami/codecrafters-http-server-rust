@@ -11,7 +11,7 @@ use anyhow::Result;
 
 use crate::{
     config::Config,
-    request::{HTTPError, Request},
+    request::{HTTPError, HTTPMethod, Request},
     response::ResponseBuilder,
 };
 
@@ -78,14 +78,21 @@ type RouteHandlerFn = fn(RequestInfo) -> Result<ResponseBuilder>;
 #[derive(Debug, Clone)]
 pub struct RouteHandler {
     handler_fn: RouteHandlerFn,
+    method: HTTPMethod,
     pattern: Regex,
     params: Vec<String>,
 }
 
 impl RouteHandler {
-    pub fn new(handler: RouteHandlerFn, pattern: Regex, params: &[String]) -> Self {
+    pub fn new(
+        handler: RouteHandlerFn,
+        method: HTTPMethod,
+        pattern: Regex,
+        params: &[String],
+    ) -> Self {
         RouteHandler {
             handler_fn: handler,
+            method,
             pattern,
             params: params.to_vec(),
         }
@@ -135,6 +142,13 @@ impl Server {
     }
 
     pub fn add_route_handler(&mut self, path: &str, handler: RouteHandlerFn) -> Result<()> {
+        // Extract the method from the path
+        let method = path.split(' ').next().unwrap();
+        let method = HTTPMethod::parse_method(method).unwrap();
+
+        // Extract path, omitting the method
+        let path = path.split(' ').nth(1).unwrap();
+
         // Extract the params from the path
         let params = path
             .split('/')
@@ -164,11 +178,11 @@ impl Server {
         let pattern = Regex::new(&pattern)?;
 
         println!(
-            "Path: {:?}, Pattern: {:?}, Params: {:?}",
-            path, pattern, params
+            "Method: {:?}, Path: {:?}, Pattern: {:?}, Params: {:?}",
+            method, path, pattern, params
         );
 
-        let route_handler = RouteHandler::new(handler, pattern, &params);
+        let route_handler = RouteHandler::new(handler, method, pattern, &params);
 
         self.route_handlers.push(route_handler);
 
@@ -228,41 +242,14 @@ impl Handler {
         let response = match request {
             Ok(mut request) => {
                 // Find the handler that matches the request's path
-                let handler = self.route_handlers.iter().find(|handler| {
-                    let path = request.request_line().path();
-                    let mut params = HashMap::new();
+                let handlers = self.find_matching_handlers(&mut request);
 
-                    // If the path matches the handler's pattern, extract the params
-                    if handler.pattern().is_match(path) {
-                        let captures = handler.pattern().captures(path).unwrap();
-
-                        // For each param in the handler's pattern, extract the value from the path
-                        for (i, name) in handler.params.iter().enumerate() {
-                            // The first capture group is the entire match, so we start at 1
-                            let value = captures.get(i + 1).unwrap().as_str();
-                            // Replace %20 with a space
-                            let value = value.replace("%20", " ");
-                            params.insert(name.to_string(), value.to_string());
-                        }
-
-                        request.add_params(params);
-
-                        println!("{}", request);
-
-                        true
-                    } else {
-                        false
-                    }
-                });
-
-                // Call the handler if it exists, otherwise return a 404
-                match handler {
-                    Some(handler) => {
-                        let fn_params = RequestInfo::new(request, self.info.clone());
-
-                        (handler.handler_fn())(fn_params)
-                    }
-                    None => Ok(ResponseBuilder::new().status(404, "Not Found")),
+                // If no handlers match the request's path, return a 404 response
+                if handlers.is_empty() {
+                    Ok(ResponseBuilder::new().status(404, "Not Found"))
+                } else {
+                    // Find the handler that matches the request's method
+                    self.find_handler_for_method(&handlers, &request)
                 }
             }
             Err(e) => {
@@ -288,6 +275,58 @@ impl Handler {
         self.tcp_stream.write_all(&response.as_bytes()).await?;
 
         Ok(())
+    }
+    fn find_matching_handlers(&self, request: &mut Request) -> Vec<&RouteHandler> {
+        self.route_handlers
+            .iter()
+            .filter(|handler| {
+                let path = request.request_line().path();
+
+                if handler.pattern().is_match(path) {
+                    // Parse params from the path
+                    let params = self.parse_params(handler, path);
+                    // Add the params to the request
+                    request.add_params(params);
+                    println!("{}", request);
+
+                    true
+                } else {
+                    false
+                }
+            })
+            .collect()
+    }
+
+    fn parse_params(&self, handler: &RouteHandler, path: &str) -> HashMap<String, String> {
+        let mut params = HashMap::new();
+
+        let captures = handler.pattern().captures(path).unwrap();
+        for (index, param_name) in handler.params.iter().enumerate() {
+            let param_value = captures.get(index + 1).unwrap().as_str();
+            let param_value = param_value.replace("%20", " ");
+            params.insert(param_name.to_string(), param_value.to_string());
+        }
+
+        params
+    }
+
+    fn find_handler_for_method(
+        &self,
+        handlers: &[&RouteHandler],
+        request: &Request,
+    ) -> Result<ResponseBuilder> {
+        handlers
+            .iter()
+            .find_map(|handler| {
+                let cloned_request = request.clone();
+                if &handler.method == cloned_request.method() {
+                    let fn_params = RequestInfo::new(cloned_request, self.info.clone());
+                    Some((handler.handler_fn())(fn_params))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(Ok(ResponseBuilder::new().status(405, "Method Not Allowed")))
     }
 
     async fn read_request(&mut self) -> Result<Request, HTTPError> {

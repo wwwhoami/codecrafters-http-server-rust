@@ -10,7 +10,6 @@ use std::{env, fs};
 use anyhow::Result;
 use config::Config;
 
-use request::HTTPMethod;
 use response::ResponseBuilder;
 use server::{RequestInfo, Server};
 
@@ -26,11 +25,11 @@ async fn main() -> Result<()> {
     let mut server = Server::new(socket_addr, config).await?;
 
     server.route_handlers(&[
-        ("/", |_| {
+        ("GET /", |_| {
             let response = ResponseBuilder::new().status(200, "OK");
             Ok(response)
         }),
-        ("/user-agent", |req_info| {
+        ("GET /user-agent", |req_info| {
             let request = req_info.request();
 
             let default_agent = "Unknown".to_string();
@@ -47,7 +46,7 @@ async fn main() -> Result<()> {
 
             Ok(response)
         }),
-        ("/echo/:whatToEcho", |req_info| {
+        ("GET /echo/:whatToEcho", |req_info| {
             let request = req_info.request();
 
             let echo_string = request.params().get("whatToEcho").unwrap();
@@ -63,23 +62,14 @@ async fn main() -> Result<()> {
 
             Ok(response)
         }),
-        ("/files/:filename", |req_info| {
-            let request = req_info.request();
-
-            let response = match request.method() {
-                HTTPMethod::GET => handle_read_file(&req_info)?,
-                HTTPMethod::POST => handle_post_file(&req_info)?,
-                _ => ResponseBuilder::new().status(405, "Method Not Allowed"),
-            };
-
-            Ok(response)
-        }),
+        ("GET /files/:filename", handle_read_file),
+        ("POST /files/:filename", handle_post_file),
     ])?;
 
     server.run().await
 }
 
-fn handle_read_file(req_info: &RequestInfo) -> Result<ResponseBuilder> {
+fn handle_read_file(req_info: RequestInfo) -> Result<ResponseBuilder> {
     let request = req_info.request();
     let filename = request.params().get("filename").unwrap();
 
@@ -100,7 +90,7 @@ fn handle_read_file(req_info: &RequestInfo) -> Result<ResponseBuilder> {
     Ok(response)
 }
 
-fn handle_post_file(req_info: &RequestInfo) -> Result<ResponseBuilder> {
+fn handle_post_file(req_info: RequestInfo) -> Result<ResponseBuilder> {
     let request = req_info.request();
     let filename = request.params().get("filename").unwrap();
 
