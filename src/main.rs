@@ -2,6 +2,7 @@ pub mod config;
 pub mod request;
 pub mod response;
 pub mod server;
+pub mod utils;
 
 use std::{env, fs};
 
@@ -11,6 +12,7 @@ use config::Config;
 use request::HTTPMethod;
 use response::{Response, ResponseBuilder};
 use server::{RequestInfo, Server};
+use utils::gzip_str;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -54,18 +56,20 @@ async fn main() -> Result<()> {
 
             let accept_encoding = request.headers().get("Accept-Encoding");
 
-            if accept_encoding.is_some() && accept_encoding.unwrap().contains("gzip") {
-                // TODO: Gzip the response
-                let gzipped = echo_string.as_bytes();
+            if accept_encoding.is_some()
+                && accept_encoding
+                    .unwrap()
+                    .split(',')
+                    .map(|x| x.trim())
+                    .any(|x| x == "gzip")
+            {
+                // Gzip the echo string
+                let gzipped_echo = gzip_str(&echo_string)?;
 
                 let response = ResponseBuilder::new()
                     .status(200, "OK")
-                    .headers(&[
-                        ("Content-Encoding", "gzip"),
-                        ("Content-Type", "text/plain"),
-                        ("Content-Length", &gzipped.len().to_string()),
-                    ])
-                    .body(gzipped)
+                    .headers(&[("Content-Encoding", "gzip"), ("Content-Type", "text/plain")])
+                    .body(&gzipped_echo)
                     .build()?;
 
                 return Ok(response);
@@ -74,7 +78,6 @@ async fn main() -> Result<()> {
             let response = ResponseBuilder::new()
                 .status(200, "OK")
                 .header("Content-Type", "text/plain")
-                .header("Content-Length", &echo_string.len().to_string())
                 .body(echo_string.as_bytes())
                 .build()?;
 
