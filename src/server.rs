@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, net::SocketAddr};
 
 use itertools::Itertools;
 use regex::Regex;
@@ -10,6 +10,7 @@ use tokio::{
 use anyhow::Result;
 
 use crate::{
+    config::Config,
     request::{HTTPError, Request},
     response::{Response, ResponseBuilder},
 };
@@ -50,7 +51,30 @@ impl Route {
     }
 }
 
-type RouteHandlerFn = fn(Request) -> Result<Response>;
+#[derive(Debug)]
+pub struct RequestInfo {
+    request: Request,
+    server_info: Info,
+}
+
+impl RequestInfo {
+    fn new(request: Request, server_info: Info) -> Self {
+        Self {
+            request,
+            server_info,
+        }
+    }
+
+    pub fn request(&self) -> &Request {
+        &self.request
+    }
+
+    pub fn pub_dir(&self) -> &str {
+        self.server_info.pub_dir()
+    }
+}
+
+type RouteHandlerFn = fn(RequestInfo) -> Result<Response>;
 #[derive(Debug, Clone)]
 pub struct RouteHandler {
     handler_fn: RouteHandlerFn,
@@ -78,28 +102,39 @@ impl RouteHandler {
 
 type RouteHandlers = Vec<RouteHandler>;
 
+#[derive(Debug, Clone)]
+pub struct Info {
+    pub_dir: String,
+}
+
+impl Info {
+    pub fn pub_dir(&self) -> &str {
+        &self.pub_dir
+    }
+}
+
 #[derive(Debug)]
 pub struct Server {
     listener: TcpListener,
     route_handlers: RouteHandlers,
+    info: Info,
 }
 
 impl Server {
-    pub async fn new(host: &str, port: i32) -> Result<Server> {
-        let addr = format!("{}:{}", host, port);
-        let listener = TcpListener::bind(addr).await?;
+    pub async fn new(socket_addr: SocketAddr, config: Config) -> Result<Server> {
+        let listener = TcpListener::bind(socket_addr).await?;
+        let info = Info {
+            pub_dir: config.pub_dir,
+        };
 
         Ok(Server {
             listener,
+            info,
             route_handlers: Vec::new(),
         })
     }
 
-    pub fn add_route_handler(
-        &mut self,
-        path: &str,
-        handler: fn(Request) -> Result<Response>,
-    ) -> Result<()> {
+    pub fn add_route_handler(&mut self, path: &str, handler: RouteHandlerFn) -> Result<()> {
         // Extract the params from the path
         let params = path
             .split('/')
@@ -158,25 +193,32 @@ impl Server {
             let (stream, _) = self.listener.accept().await?;
 
             let route_handler = self.route_handlers.clone();
+            let info = self.info.clone();
 
             tokio::spawn(async move {
-                let mut handler = Handler::new(stream, route_handler);
+                let mut handler = Handler::new(stream, route_handler, info);
                 let _ = handler.handle().await;
             });
         }
+    }
+
+    pub fn info(&self) -> &Info {
+        &self.info
     }
 }
 
 pub struct Handler {
     tcp_stream: TcpStream,
     route_handlers: RouteHandlers,
+    info: Info,
 }
 
 impl Handler {
-    pub fn new(stream: TcpStream, route_handlers: RouteHandlers) -> Handler {
+    pub fn new(stream: TcpStream, route_handlers: RouteHandlers, info: Info) -> Handler {
         Handler {
             tcp_stream: stream,
             route_handlers,
+            info,
         }
     }
 
@@ -215,7 +257,11 @@ impl Handler {
 
                 // Call the handler if it exists, otherwise return a 404
                 match handler {
-                    Some(handler) => (handler.handler_fn())(request),
+                    Some(handler) => {
+                        let fn_params = RequestInfo::new(request, self.info.clone());
+
+                        (handler.handler_fn())(fn_params)
+                    }
                     None => ResponseBuilder::new().status(404, "Not Found").build(),
                 }
             }
