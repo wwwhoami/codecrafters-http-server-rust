@@ -1,4 +1,5 @@
 pub mod config;
+pub mod middleware;
 pub mod request;
 pub mod response;
 pub mod server;
@@ -10,9 +11,8 @@ use anyhow::Result;
 use config::Config;
 
 use request::HTTPMethod;
-use response::{Response, ResponseBuilder};
+use response::ResponseBuilder;
 use server::{RequestInfo, Server};
-use utils::gzip_str;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
 
     server.route_handlers(&[
         ("/", |_| {
-            let response = ResponseBuilder::new().status(200, "OK").build()?;
+            let response = ResponseBuilder::new().status(200, "OK");
             Ok(response)
         }),
         ("/user-agent", |req_info| {
@@ -43,8 +43,7 @@ async fn main() -> Result<()> {
             let response = ResponseBuilder::new()
                 .status(200, "OK")
                 .header("Content-Type", "text/plain")
-                .body(user_agent.as_bytes())
-                .build()?;
+                .body(user_agent.as_bytes());
 
             Ok(response)
         }),
@@ -54,32 +53,13 @@ async fn main() -> Result<()> {
             let echo_string = request.params().get("whatToEcho").unwrap();
             let echo_string = echo_string.replace("%20", " ");
 
-            let accept_encoding = request.headers().get("Accept-Encoding");
-
-            if accept_encoding.is_some()
-                && accept_encoding
-                    .unwrap()
-                    .split(',')
-                    .map(|x| x.trim())
-                    .any(|x| x == "gzip")
-            {
-                // Gzip the echo string
-                let gzipped_echo = gzip_str(&echo_string)?;
-
-                let response = ResponseBuilder::new()
-                    .status(200, "OK")
-                    .headers(&[("Content-Encoding", "gzip"), ("Content-Type", "text/plain")])
-                    .body(&gzipped_echo)
-                    .build()?;
-
-                return Ok(response);
-            }
-
             let response = ResponseBuilder::new()
                 .status(200, "OK")
                 .header("Content-Type", "text/plain")
-                .body(echo_string.as_bytes())
-                .build()?;
+                .body(echo_string.as_bytes());
+
+            // Apply gzip middleware
+            let response = middleware::gzip_response_middleware(request, response)?;
 
             Ok(response)
         }),
@@ -89,9 +69,7 @@ async fn main() -> Result<()> {
             let response = match request.method() {
                 HTTPMethod::GET => handle_read_file(&req_info)?,
                 HTTPMethod::POST => handle_post_file(&req_info)?,
-                _ => ResponseBuilder::new()
-                    .status(405, "Method Not Allowed")
-                    .build()?,
+                _ => ResponseBuilder::new().status(405, "Method Not Allowed"),
             };
 
             Ok(response)
@@ -101,7 +79,7 @@ async fn main() -> Result<()> {
     server.run().await
 }
 
-fn handle_read_file(req_info: &RequestInfo) -> Result<Response> {
+fn handle_read_file(req_info: &RequestInfo) -> Result<ResponseBuilder> {
     let request = req_info.request();
     let filename = request.params().get("filename").unwrap();
 
@@ -113,18 +91,16 @@ fn handle_read_file(req_info: &RequestInfo) -> Result<Response> {
         Ok(file) => ResponseBuilder::new()
             .status(200, "OK")
             .header("Content-Type", "application/octet-stream")
-            .body(&file)
-            .build()?,
+            .body(&file),
         Err(_) => ResponseBuilder::new()
             .status(404, "Not Found")
-            .header("Content-Type", "text/plain")
-            .build()?,
+            .header("Content-Type", "text/plain"),
     };
 
     Ok(response)
 }
 
-fn handle_post_file(req_info: &RequestInfo) -> Result<Response> {
+fn handle_post_file(req_info: &RequestInfo) -> Result<ResponseBuilder> {
     let request = req_info.request();
     let filename = request.params().get("filename").unwrap();
 
@@ -135,13 +111,11 @@ fn handle_post_file(req_info: &RequestInfo) -> Result<Response> {
     let response = match file {
         Ok(_) => ResponseBuilder::new()
             .status(201, "Created")
-            .header("Content-Type", "text/plain")
-            .build()?,
+            .header("Content-Type", "text/plain"),
         Err(_) => ResponseBuilder::new()
             .status(500, "Internal Server Error")
             .header("Content-Type", "text/plain")
-            .body("Error writing file".as_bytes())
-            .build()?,
+            .body("Error writing file".as_bytes()),
     };
 
     Ok(response)

@@ -69,6 +69,10 @@ impl ResponseBuilder {
         self
     }
 
+    pub fn get_body(&self) -> &Vec<u8> {
+        &self.body
+    }
+
     pub fn build(self) -> Result<Response> {
         if let Some(status) = self.status {
             Ok(Response {

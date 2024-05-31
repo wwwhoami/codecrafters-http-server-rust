@@ -12,7 +12,7 @@ use anyhow::Result;
 use crate::{
     config::Config,
     request::{HTTPError, Request},
-    response::{Response, ResponseBuilder},
+    response::ResponseBuilder,
 };
 
 pub struct Route {
@@ -74,7 +74,7 @@ impl RequestInfo {
     }
 }
 
-type RouteHandlerFn = fn(RequestInfo) -> Result<Response>;
+type RouteHandlerFn = fn(RequestInfo) -> Result<ResponseBuilder>;
 #[derive(Debug, Clone)]
 pub struct RouteHandler {
     handler_fn: RouteHandlerFn,
@@ -262,7 +262,7 @@ impl Handler {
 
                         (handler.handler_fn())(fn_params)
                     }
-                    None => ResponseBuilder::new().status(404, "Not Found").build(),
+                    None => Ok(ResponseBuilder::new().status(404, "Not Found")),
                 }
             }
             Err(e) => {
@@ -274,17 +274,16 @@ impl Handler {
                     HTTPError::Other(_) => (400, "Bad Request"),
                 };
 
-                ResponseBuilder::new().status(code, reason).build()
+                Ok(ResponseBuilder::new().status(code, reason))
             }
         };
 
         let response = response.unwrap_or_else(|e| {
             eprintln!("Error: {}", e);
-            ResponseBuilder::new()
-                .status(500, "Internal Server Error")
-                .build()
-                .unwrap()
+            ResponseBuilder::new().status(500, "Internal Server Error")
         });
+
+        let response = response.build().unwrap();
 
         self.tcp_stream.write_all(&response.as_bytes()).await?;
 
