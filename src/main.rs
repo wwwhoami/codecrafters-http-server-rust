@@ -8,8 +8,9 @@ use std::{env, fs};
 use anyhow::Result;
 use config::Config;
 
-use response::ResponseBuilder;
-use server::Server;
+use request::HTTPMethod;
+use response::{Response, ResponseBuilder};
+use server::{RequestInfo, Server};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -62,22 +63,11 @@ async fn main() -> Result<()> {
         ("/files/:filename", |req_info| {
             let request = req_info.request();
 
-            let filename = request.params().get("filename").unwrap();
-
-            let path = format!("{}/{}", req_info.pub_dir(), filename);
-            println!("Path: {}", path);
-
-            let file = fs::read(path);
-
-            let response = match file {
-                Ok(file) => ResponseBuilder::new()
-                    .status(200, "OK")
-                    .header("Content-Type", "application/octet-stream")
-                    .body(&file)
-                    .build()?,
-                Err(_) => ResponseBuilder::new()
-                    .status(404, "Not Found")
-                    .header("Content-Type", "text/plain")
+            let response = match request.method() {
+                HTTPMethod::GET => handle_read_file(&req_info)?,
+                HTTPMethod::POST => handle_post_file(&req_info)?,
+                _ => ResponseBuilder::new()
+                    .status(405, "Method Not Allowed")
                     .build()?,
             };
 
@@ -86,4 +76,50 @@ async fn main() -> Result<()> {
     ])?;
 
     server.run().await
+}
+
+fn handle_read_file(req_info: &RequestInfo) -> Result<Response> {
+    let request = req_info.request();
+    let filename = request.params().get("filename").unwrap();
+
+    let path = format!("{}/{}", req_info.pub_dir(), filename);
+
+    let file = fs::read(path);
+
+    let response = match file {
+        Ok(file) => ResponseBuilder::new()
+            .status(200, "OK")
+            .header("Content-Type", "application/octet-stream")
+            .body(&file)
+            .build()?,
+        Err(_) => ResponseBuilder::new()
+            .status(404, "Not Found")
+            .header("Content-Type", "text/plain")
+            .build()?,
+    };
+
+    Ok(response)
+}
+
+fn handle_post_file(req_info: &RequestInfo) -> Result<Response> {
+    let request = req_info.request();
+    let filename = request.params().get("filename").unwrap();
+
+    let path = format!("{}/{}", req_info.pub_dir(), filename);
+
+    let file = fs::write(path, request.body().unwrap());
+
+    let response = match file {
+        Ok(_) => ResponseBuilder::new()
+            .status(201, "Created")
+            .header("Content-Type", "text/plain")
+            .build()?,
+        Err(_) => ResponseBuilder::new()
+            .status(500, "Internal Server Error")
+            .header("Content-Type", "text/plain")
+            .body("Error writing file".as_bytes())
+            .build()?,
+    };
+
+    Ok(response)
 }

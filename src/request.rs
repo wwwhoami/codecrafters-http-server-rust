@@ -186,4 +186,8 @@ impl Request {
     pub fn add_params(&mut self, params: HashMap<String, String>) {
         self.params.extend(params);
     }
+
+    pub fn method(&self) -> &HTTPMethod {
+        self.request_line.method()
+    }
 }
