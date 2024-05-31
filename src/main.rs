@@ -52,9 +52,29 @@ async fn main() -> Result<()> {
             let echo_string = request.params().get("whatToEcho").unwrap();
             let echo_string = echo_string.replace("%20", " ");
 
+            let accept_encoding = request.headers().get("Accept-Encoding");
+
+            if accept_encoding.is_some() && accept_encoding.unwrap().contains("gzip") {
+                // TODO: Gzip the response
+                let gzipped = echo_string.as_bytes();
+
+                let response = ResponseBuilder::new()
+                    .status(200, "OK")
+                    .headers(&[
+                        ("Content-Encoding", "gzip"),
+                        ("Content-Type", "text/plain"),
+                        ("Content-Length", &gzipped.len().to_string()),
+                    ])
+                    .body(gzipped)
+                    .build()?;
+
+                return Ok(response);
+            }
+
             let response = ResponseBuilder::new()
                 .status(200, "OK")
                 .header("Content-Type", "text/plain")
+                .header("Content-Length", &echo_string.len().to_string())
                 .body(echo_string.as_bytes())
                 .build()?;
 
